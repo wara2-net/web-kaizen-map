@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+</head>
+
+<body onload="init()">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+    integrity="sha256-kLaT2GOSpHechhsozzB+flnD+zUyjE2LlfWPgU04xyI=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"
+    integrity="sha256-WBkoXOwTeyKclOHuWtc+i2uENFpDZ9YPdf5Hf+D7ewM=" crossorigin=""></script>
+  <script src="https://code.jquery.com/jquery-3.6.3.min.js"
+    integrity="sha256-pvPw+upLPUjgMXY0G+8O0xUf+/Im1MZjXxxgOcBQBXU=" crossorigin="anonymous"></script>
+
+  <!-- https://moewe-net.com/js/leaflet マーカークラスターのためのscript -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"
+    integrity="sha512-OFs3W4DIZ5ZkrDhBFtsCP6JXtMEDGmhl0QPlmWYBJay40TT1n3gt2Xuw8Pf/iezgW9CdabjkNChRqozl/YADmg=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css"
+    integrity="sha512-ENrTWqddXrLJsQS2A86QmvA17PkJ0GVm1bqj5aTgpeMAfDKN2+SIOLpKG8R/6KkimnhTb+VW5qqUHB/r1zaRgg=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css"
+    integrity="sha512-fYyZwU1wU0QWB4Yutd/Pvhy5J1oWAwFXun1pt+Bps04WSe4Aq6tyHlT4+MHSJhD8JlLfgLuC4CbCnX5KHSjyCg=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <style type="text/css">
+    /* アイコンの色変えるのに必要 */
+    .icon-blue {
+      filter: hue-rotate(0deg);
+    }
+
+    .icon-red {
+      filter: hue-rotate(150deg);
+    }
+
+    .icon-yellow {
+      filter: hue-rotate(225deg) brightness(200%);
+    }
+
+    .icon-green {
+      filter: hue-rotate(270deg) brightness(150%);
+    }
+
+    .icon-orange {
+      filter: hue-rotate(165deg) brightness(150%);
+    }
+
+    .icon-gray {
+      filter: grayscale(100%);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      color: #555;
+    }
+
+    .legend-item-color {
+      display: block;
+      width: 15px;
+      height: 15px;
+      margin-right: 5px;
+    }
+  </style>
+
+  <script>
+    //https://qiita.com/access3151fq/items/ffdd74fdb3468d29e553
+    //アイコンの色を変える
+    function genIconObject(colorClassName) {
+      return L.icon(icon_Base = {
+        iconUrl: "https://esm.sh/leaflet@1.9.2/dist/images/marker-icon.png",
+        iconRetinaUrl: "https://esm.sh/leaflet@1.9.2/dist/images/marker-icon-2x.png",
+        shadowUrl: "https://esm.sh/leaflet@1.9.2/dist/images/marker-shadow.png",
+        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
+        tooltipAnchor: [16, -28], shadowSize: [41, 41],
+        className: colorClassName, // <= ここでcssで作ったクラス名を指定
+      });
+    }
+    const redIcon = genIconObject("icon-red");
+    const blueIcon = genIconObject("icon-blue");
+    const yellowIcon = genIconObject("icon-yellow");
+    const greenIcon = genIconObject("icon-green");
+    const orangeIcon = genIconObject("icon-orange");
+    const grayIcon = genIconObject("icon-gray");
+
+    //マーカーに表示したい対象の緯度経度とポップアップする名称を設定
+    let markerList = [
+      { pos: [34.6686457384369, 135.49130770470023], name: "桜川", icon: grayIcon, layer: "関西" },
+      { pos: [35.652103840876286, 139.7980625095375], name: "豊洲", icon: grayIcon, layer: "関東" },
+      { pos: [34.711141226058295, 135.6147849221825], name: "大東", icon: grayIcon, layer: "関西" },
+      // "<?!= builList ?>"
+    ];
+
+    //JSONを取ってきてparseしたものを返す関数(要 jquery)
+    function getParsedJSON(jsonURL) {
+      let result = $.ajax({
+        type: 'GET', async: false, //*** 同期通信 ***
+        url: jsonURL,
+      }).responseText;
+      return JSON.parse(result);
+    }
+
+    //時刻を読める形式に変換 引数timeはミリ秒単位
+    function getReadableTime(time) {
+      let dt = new Date(time);
+      let y = dt.getFullYear();
+      let m = dt.getMonth() + 1;
+      let d = dt.getDate();
+      let h = dt.getHours();
+      let min = ("0" + dt.getMinutes()).slice(-2);  //「分」のゼロフィル
+      return y + "/" + m + "/" + d + " " + h + ":" + min;
+    }
+
+    //雨雲画像取得　参考：https://2ndart.hatenablog.com/entry/2021/07/11/150343
+    //取得可能な雨雲画像の最新時刻を取得
+    function getRainViewer_LatestTime() {
+      let results = getParsedJSON('https://tilecache.rainviewer.com/api/maps.json');
+      return results[results.length - 1];
+    }
+
+    //時刻 (getRainViewer_LatestTimeの返り値) を渡して雨雲のレイヤを取得
+    function getRainViewer_RadarLayer(time) {
+      return L.tileLayer('https://tilecache.rainviewer.com/v2/radar/' + time + '/256/{z}/{x}/{y}/2/1_1.png', {
+        opacity: 0.5,
+        attribution: 'Rain Radar By <a target="_top" rel="noopener" href="https://www.rainviewer.com/api.html">RainViewer.com</a>'
+      });
+    }
+
+    //地震の情報をプロットしたレイヤを返す
+    function getEQLayer() {
+      const regexp = /([+-][\d\.]+)([+-][\d\.]+)[+-]{0,1}([\d\.]+){0,1}\//; //緯度経度・震源の深さを解析する正規表現。震源の深さは含まれない場合もある
+      const jmaURL = "https://www.data.jma.go.jp/multi/quake/quake_detail.html?eventID=<EID>&lang=jp";
+
+      //気象庁から地震情報をGET・レイヤ作成
+      let json = getParsedJSON('https://www.jma.go.jp/bosai/quake/data/list.json');
+      let eqlayer = L.layerGroup();
+
+      //forで指定時間時間(24時間以内)の震源・震度情報を取り出す
+      //最新の地震を最前面に出すため末尾から処理
+      for (let i = json.length; i >= 0; i--) {
+        //表示させないデータを読み飛ばし(null, 震度情報でない、24時間以前)
+        if (json[i] == null || json[i].ttl != "震源・震度情報") continue;
+        let eqDateTime = new Date(json[i].at);
+        if ((eqDateTime.getTime() + (24 * 60 * 60 * 1000)) < Date.now()) continue;
+
+        //緯度経度・震源の深さを正規表現で分解 match[1]:緯度 [2]:経度 [3]:震源の深さ(メートル)　震源の深さはオプション。
+        // 正規表現でマッチしなかった場合はスキップ
+        let match = regexp.exec(json[i].cod);
+        if (match == null) continue;
+
+        //サークルマーカーのオプション
+        let cirOpt = { color: "#FFFF00", weight: 0, fillOpacity: .4 };
+
+        //震度は 5+、5-みたいに表示される　計算し難いので数字部分だけ取り出しておく
+        //震度により色分け＆半径調整 社内ルール 震度4以上で報告対象(赤)　4未満：黄
+        let maxiNum = json[i].maxi.replace("+", "").replace("-", "")
+        cirOpt["radius"] = maxiNum * 10
+        if (maxiNum >= 4) cirOpt["color"] = "#FF0000";
+
+        //1時間以内に起こった地震は強調
+        if ((eqDateTime.getTime() + (60 * 60 * 1000)) > Date.now()) {
+          cirOpt["weight"] = (i == 0 ? 5 : 2)     //最新(i==0)の地震はさらに強調(線を太く)
+          cirOpt["fillOpacity"] = .2
+        }
+
+        //サークルマーカー追加
+        let cMarker = L.circleMarker(L.latLng(match[1], match[2]), cirOpt);
+        cMarker.bindTooltip(
+          getReadableTime(eqDateTime) + (i == 0 ? " [最新]" : "") + "<BR>" + json[i].anm +
+          "　震源の深さ" + match[3] / 1000 + "km<BR>マグニチュード:" + json[i].mag +
+          "<BR>最大震度:" + json[i].maxi.replace("+", "強").replace("-", "弱"));
+        cMarker.on("click", () => window.open(jmaURL.replace("<EID>", json[i].ctt))); //クリックで詳細を開く
+        cMarker.addTo(eqlayer);
+      }
+      return eqlayer;
+    }
+
+    function init() {
+      let map = L.map('mapcontainer');
+
+      //何種類かの地図のtileLayerをbaseMapsオブジェクトに格納し、ブラウザで選べるようにする
+      let baseMaps = {};
+      //GoogleMap https://gis.stackexchange.com/questions/225098/using-google-maps-static-tiles-with-leaflet
+      //lyrs=？ p；地形　s：衛星　y；衛星ハイブリッド
+      baseMaps["GoogleMap"] = L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+        {
+          maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+          attribution: "<a href='https://www.google.co.jp/maps/'>GoogleMap</a>"
+        });
+      baseMaps["GoogleMap(航空写真)"] = L.tileLayer('http://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        {
+          maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+          attribution: "<a href='https://www.google.co.jp/maps/'>GoogleMap</a>"
+        });
+      //地理院地図の標準地図タイル
+      baseMaps["地理院地図"] = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',
+        { attribution: "<a href='https://maps.gsi.go.jp/development/ichiran.html' target='_blank'>地理院タイル</a>" });
+      //地理院地図の淡色地図タイル
+      baseMaps["淡色地図"] = L.tileLayer('http://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
+        { attribution: "<a href='http://portal.cyberjapan.jp/help/termsofuse.html' target='_blank'>地理院タイル</a>" });
+      //オープンストリートマップのタイル
+      baseMaps["Open Street Map"] = L.tileLayer('http://tile.openstreetmap.jp/{z}/{x}/{y}.png',
+        { attribution: "<a href='http://osm.org/copyright' target='_blank'>OpenStreetMap</a> contributors" });
+      //デフォルトで表示する地図設定
+      baseMaps["GoogleMap"].addTo(map);
+
+      //縮尺追加
+      L.control.scale({ maxWidth: 250, imperial: false }).addTo(map);
+
+      // 凡例を右下に追加
+      var legend = L.control({ position: 'bottomright' });
+      legend.onAdd = function (map) {
+        var div = L.DomUtil.create('div', 'info legend');
+        var labels = [];
+        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#0000ff"></span>コンクリート</span>');
+        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ffff00"></span>プレハブ</span>');
+        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ff0000"></span>可搬</span>');
+        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#7d7d7d"></span>ビル形態不明</span>');
+        // labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ee7800"></span>凡例2</span>');
+        // labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#00ff00"></span>凡例4</span>');
+        div.innerHTML = labels.join('');
+        return div;
+      };
+      legend.addTo(map);
+
+      //マーカー全体を表示するためのboundを用意
+      let bound = L.latLngBounds(markerList[0].pos, markerList[0].pos);
+
+      //連想配列leyersに、markerList(各GC情報)のlayer毎にmarkerClusterGroupを格納＆マーカーを追加
+      let leyers = {};
+      for (let i in markerList) {
+        let mk = markerList[i];
+        if (!(mk.layer in leyers)) {
+          //連想配列leyersにlayreの要素がない場合、要素追加＆マーカークラスター作成
+          leyers[mk.layer] = L.markerClusterGroup({
+            maxClusterRadius: 0,
+          });  //クラスタ化の半径(初期値80)、大きくすると離れたマーカーも1つにまとめます
+          // if (Object.keys(leyers).length == 1)
+          //     map.addLayer(leyers[mk.layer]);    //最初に作成したレイヤだけ地図に表示
+          map.addLayer(leyers[mk.layer]);    //全レイヤを地図に表示
+        }
+        leyers[mk.layer].addLayer(  //レイヤにマーカーを追加
+          // L.marker(mk.pos, { icon: mk.icon }).bindTooltip(mk.name));
+          // L.marker(mk.pos, { icon: mk.icon }).bindPopup(L.popup().setContent("<a href='https://www.google.com' target='blank'>GoogleMap</a>")).bindTooltip(mk.name, {permanent:true}));
+          L.marker(mk.pos, { icon: mk.icon }).bindTooltip(mk.name, { permanent: true }).on('click', function (e) { clickEvt(mk.name) })); //常に表示、マーカークリックで詳細情報へ
+        bound.extend(mk.pos);   //boundにマーカーを追加(mk.posが入るように範囲を広げる) 
+      }
+
+      //雨雲・地震レイヤを連想配列leyersに追加＆地図に表示
+      let timeRadar = getRainViewer_LatestTime();
+      let nameRadar = "雨雲(" + getReadableTime(timeRadar * 1000) + ")";
+      leyers[nameRadar] = getRainViewer_RadarLayer(timeRadar);
+      map.addLayer(leyers[nameRadar]);
+      leyers["地震(震源・過去24h)"] = getEQLayer();
+      map.addLayer(leyers["地震(震源・過去24h)"]);
+
+      //切り替えBoxを作成( {collapsed:false}で表示しっぱなし)＆マーカーが入るように地図範囲設定
+      L.control.layers(baseMaps, leyers, { collapsed: false }).addTo(map);
+      map.fitBounds(bound);
+
+      //マーカークリック時イベント
+      function clickEvt(builName) {
+        //window.open('https://maps.google.com/maps?ll=35,135');
+        let link = "<?!= builLink ?>"
+        link = link.replace(/<BUIL>/g, builName);
+        window.open(link);
+      }
+    }
+  </script>
+  <div id="mapcontainer" style="position:absolute;top:0;left:0;right:0;bottom:0;"></div>
+  <!-- <script LANGUAGE="JavaScript">
+    setTimeout("location.reload()", 1000 * 60); //自動リロード 
+  </script> -->
+</body>
+
+</html>
