@@ -69,7 +69,7 @@
     //https://qiita.com/access3151fq/items/ffdd74fdb3468d29e553
     //アイコンの色を変える
     function genIconObject(colorClassName) {
-      return L.icon(icon_Base = {
+      return L.icon({
         iconUrl: "https://esm.sh/leaflet@1.9.2/dist/images/marker-icon.png",
         iconRetinaUrl: "https://esm.sh/leaflet@1.9.2/dist/images/marker-icon-2x.png",
         shadowUrl: "https://esm.sh/leaflet@1.9.2/dist/images/marker-shadow.png",
@@ -120,13 +120,13 @@
     //   return results[results.length - 1];
     // }
 
-    //時刻 (getRainViewer_LatestTimeの返り値) を渡して雨雲のレイヤを取得
-    function getRainViewer_RadarLayer(time) {
-      return L.tileLayer('https://tilecache.rainviewer.com/v2/radar/' + time + '/256/{z}/{x}/{y}/2/1_1.png', {
-        opacity: 0.5,
-        attribution: 'Rain Radar By <a target="_top" rel="noopener" href="https://www.rainviewer.com/api.html">RainViewer.com</a>'
-      });
-    }
+    // //時刻 (getRainViewer_LatestTimeの返り値) を渡して雨雲のレイヤを取得
+    // function getRainViewer_RadarLayer(time) {
+    //   return L.tileLayer('https://tilecache.rainviewer.com/v2/radar/' + time + '/256/{z}/{x}/{y}/2/1_1.png', {
+    //     opacity: 0.5,
+    //     attribution: 'Rain Radar By <a target="_top" rel="noopener" href="https://www.rainviewer.com/api.html">RainViewer.com</a>'
+    //   });
+    // }
 
     //地震の情報をプロットしたレイヤを返す
     function getEQLayer() {
@@ -155,14 +155,14 @@
 
         //震度は 5+、5-みたいに表示される　計算し難いので数字部分だけ取り出しておく
         //震度により色分け＆半径調整 社内ルール 震度4以上で報告対象(赤)　4未満：黄
-        let maxiNum = json[i].maxi.replace("+", "").replace("-", "")
-        cirOpt["radius"] = maxiNum * 10
+        let maxiNum = json[i].maxi.replace("+", "").replace("-", "");
+        cirOpt["radius"] = maxiNum * 10;
         if (maxiNum >= 4) cirOpt["color"] = "#FF0000";
 
         //1時間以内に起こった地震は強調
         if ((eqDateTime.getTime() + (60 * 60 * 1000)) > Date.now()) {
-          cirOpt["weight"] = (i == 0 ? 5 : 2)     //最新(i==0)の地震はさらに強調(線を太く)
-          cirOpt["fillOpacity"] = .2
+          cirOpt["weight"] = (i == 0 ? 5 : 2);     //最新(i==0)の地震はさらに強調(線を太く)
+          cirOpt["fillOpacity"] = .2;
         }
 
         //サークルマーカー追加
@@ -244,15 +244,15 @@
         leyers[mk.layer].addLayer(  //レイヤにマーカーを追加
           // L.marker(mk.pos, { icon: mk.icon }).bindTooltip(mk.name));
           // L.marker(mk.pos, { icon: mk.icon }).bindPopup(L.popup().setContent("<a href='https://www.google.com' target='blank'>GoogleMap</a>")).bindTooltip(mk.name, {permanent:true}));
-          L.marker(mk.pos, { icon: mk.icon }).bindTooltip(mk.name, { permanent: true }).on('click', function (e) { clickEvt(mk.name) })); //常に表示、マーカークリックで詳細情報へ
+          L.marker(mk.pos, { icon: mk.icon }).bindTooltip(mk.name, { permanent: true }).on('click', function () { clickEvt(mk.name); })); //常に表示、マーカークリックで詳細情報へ
         bound.extend(mk.pos);   //boundにマーカーを追加(mk.posが入るように範囲を広げる) 
       }
 
       //雨雲・地震レイヤを連想配列leyersに追加＆地図に表示
-      let timeRadar = getRainViewer_LatestTime();
-      let nameRadar = "雨雲(" + getReadableTime(timeRadar * 1000) + ")";
-      leyers[nameRadar] = getRainViewer_RadarLayer(timeRadar);
-      map.addLayer(leyers[nameRadar]);
+      // let timeRadar = getRainViewer_LatestTime();
+      // let nameRadar = "雨雲(" + getReadableTime(timeRadar * 1000) + ")";
+      // leyers[nameRadar] = getRainViewer_RadarLayer(timeRadar);
+      // map.addLayer(leyers[nameRadar]);
       leyers["地震(震源・過去24h)"] = getEQLayer();
       map.addLayer(leyers["地震(震源・過去24h)"]);
 
@@ -263,7 +263,7 @@
       //マーカークリック時イベント
       function clickEvt(builName) {
         //window.open('https://maps.google.com/maps?ll=35,135');
-        let link = "<?!= builLink ?>"
+        let link = "<?!= builLink ?>";
         link = link.replace(/<BUIL>/g, builName);
         window.open(link);
       }
