@@ -113,12 +113,12 @@
       return y + "/" + m + "/" + d + " " + h + ":" + min;
     }
 
-    //雨雲画像取得　参考：https://2ndart.hatenablog.com/entry/2021/07/11/150343
-    //取得可能な雨雲画像の最新時刻を取得
-    function getRainViewer_LatestTime() {
-      let results = getParsedJSON('https://tilecache.rainviewer.com/api/maps.json');
-      return results[results.length - 1];
-    }
+    // //雨雲画像取得　参考：https://2ndart.hatenablog.com/entry/2021/07/11/150343
+    // //取得可能な雨雲画像の最新時刻を取得
+    // function getRainViewer_LatestTime() {
+    //   let results = getParsedJSON('https://tilecache.rainviewer.com/api/maps.json');
+    //   return results[results.length - 1];
+    // }
 
     //時刻 (getRainViewer_LatestTimeの返り値) を渡して雨雲のレイヤを取得
     function getRainViewer_RadarLayer(time) {
