@@ -131,7 +131,31 @@
     //   });
     // }
 
-    //地震の情報をプロットしたレイヤを返す
+    // 気象レーダーをプロットしたレイヤを返す
+    function getWeatherLayer() {
+      // レイヤーを作成
+      let weatherJSON = getParsedJSON('https://api.rainviewer.com/public/weather-maps.json');
+      let host = weatherJSON.host; //画像サーバーのホスト [3]
+      let latestPath = weatherJSON.radar.past[weatherJSON.radar.past.length - 1].path; //最新のデータパス [1], [3]
+      let tileSIze = 256; //画像サイズ (256 または 512) [5]
+      let colorScheme = 1; //カラースキームID [5]
+      let smooth = 1; //平滑化処理 (1: ON, 0: OFF) [5]
+      let snow = 1; //雪の表示 (1: ON, 0: OFF) [5]
+      let radarUrl = `${host}${latestPath}/${tileSIze}/{z}/{x}/{y}/${colorScheme}/${smooth}_${snow}.png`; //タイルURLの組み立て [2], [5]
+      let raderLayer = L.tileLayer(radarUrl, {
+        attribution: '<a href="https://www.rainviewer.com/api.html">RainViewer</a>', //出典明記が必要 [6]
+        opacity: 0.6, //背景地図が見えるよう透明度を調整
+        zIndex: 100
+      });
+
+      // 文字列化した時刻を作成
+      let timeStr = getReadableTime(weatherJSON.radar.past[weatherJSON.radar.past.length - 1].time * 1000); 
+
+      // レイヤーと時刻を返す
+      return [raderLayer, timeStr];
+    }
+
+    // 地震の情報をプロットしたレイヤを返す
     function getEQLayer() {
       const regexp = /([+-][\d\.]+)([+-][\d\.]+)[+-]{0,1}([\d\.]+){0,1}\//; //緯度経度・震源の深さを解析する正規表現。震源の深さは含まれない場合もある
       const jmaURL = "https://www.data.jma.go.jp/multi/quake/quake_detail.html?eventID=<EID>&lang=jp";
@@ -259,32 +283,24 @@
       leyers["地震(震源・過去24h)"] = getEQLayer();
       map.addLayer(leyers["地震(震源・過去24h)"]);
 
-      //追加してみる
-      // 1. RainViewer API から最新のメタデータを取得
-      fetch('https://api.rainviewer.com/public/weather-maps.json')
-          .then(response => response.json())
-          .then(data => {
-              const host = data.host; // 画像サーバーのホスト [3]
-              const latestPath = data.radar.past[data.radar.past.length - 1].path; // 最新のデータパス [1], [3]
-              
-              // 2. タイルURLの組み立て [2], [5]
-              // {host}{path}/{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
-              const tileSize = 256; // 画像サイズ (256 または 512) [5]
-              const colorScheme = 1; // カラースキームID [5]
-              const smooth = 1; // 平滑化処理 (1: ON, 0: OFF) [5]
-              const snow = 1; // 雪の表示 (1: ON, 0: OFF) [5]
-
-              const radarUrl = `${host}${latestPath}/${tileSize}/{z}/{x}/{y}/${colorScheme}/${smooth}_${snow}.png`;
-
-              // 3. Leaflet タイルレイヤとしてマップに追加
-              leyers["雨雲"] = L.tileLayer(radarUrl, {
-                  attribution: '<a href="https://www.rainviewer.com/">RainViewer</a>', // 出典明記が必要 [6]
-                  opacity: 0.8, // 背景地図が見えるよう透明度を調整
-                  zIndex: 100
-              });
-              map.addLayer(leyers["雨雲"]); // マップにレイヤを追加
-          })
-          .catch(error => console.error('RainViewer API の取得に失敗しました:', error));
+      // 気象レーダー画像 追加してみる
+      // let weatherJSON = getParsedJSON('https://api.rainviewer.com/public/weather-maps.json');
+      // let host = weatherJSON.host; //画像サーバーのホスト [3]
+      // let latestPath = weatherJSON.radar.past[weatherJSON.radar.past.length - 1].path; //最新のデータパス [1], [3]
+      // let tileSIze = 256; //画像サイズ (256 または 512) [5]
+      // let colorScheme = 1; //カラースキームID [5]
+      // let smooth = 1; //平滑化処理 (1: ON, 0: OFF) [5]
+      // let snow = 1; //雪の表示 (1: ON, 0: OFF) [5]
+      // let radarUrl = `${host}${latestPath}/${tileSIze}/{z}/{x}/{y}/${colorScheme}/${smooth}_${snow}.png`; //タイルURLの組み立て [2], [5]
+      // let raderLayer = L.tileLayer(radarUrl, {
+      //   attribution: '<a href="https://www.rainviewer.com/api.html">RainViewer</a>', //出典明記が必要 [6]
+      //   opacity: 0.8, //背景地図が見えるよう透明度を調整
+      //   zIndex: 100
+      // });
+      let weatherLayerTime = getWeatherLayer(); //レイヤと時刻のセットを取得
+      let weatherLayerName = "雨雲(" + weatherLayerTime[1] + ")"; //レイヤ名に時刻をつける
+      leyers[weatherLayerName] = weatherLayerTime[0];
+      map.addLayer(leyers[weatherLayerName]); //マップにレイヤを追加
           
 
       //切り替えBoxを作成( {collapsed:false}で表示しっぱなし)＆マーカーが入るように地図範囲設定
