@@ -259,6 +259,34 @@
       leyers["地震(震源・過去24h)"] = getEQLayer();
       map.addLayer(leyers["地震(震源・過去24h)"]);
 
+      //追加してみる
+      // 1. RainViewer API から最新のメタデータを取得
+      fetch('https://api.rainviewer.com/public/weather-maps.json')
+          .then(response => response.json())
+          .then(data => {
+              const host = data.host; // 画像サーバーのホスト [3]
+              const latestPath = data.radar.past[data.radar.past.length - 1].path; // 最新のデータパス [1], [3]
+              
+              // 2. タイルURLの組み立て [2], [5]
+              // {host}{path}/{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
+              const tileSize = 256; // 画像サイズ (256 または 512) [5]
+              const colorScheme = 1; // カラースキームID [5]
+              const smooth = 1; // 平滑化処理 (1: ON, 0: OFF) [5]
+              const snow = 1; // 雪の表示 (1: ON, 0: OFF) [5]
+
+              const radarUrl = `${host}${latestPath}/${tileSize}/{z}/{x}/{y}/${colorScheme}/${smooth}_${snow}.png`;
+
+              // 3. Leaflet タイルレイヤとしてマップに追加
+              leyers["雨雲"] = L.tileLayer(radarUrl, {
+                  attribution: '<a href="https://www.rainviewer.com/">RainViewer</a>', // 出典明記が必要 [6]
+                  opacity: 0.8, // 背景地図が見えるよう透明度を調整
+                  zIndex: 100
+              });
+              map.addLayer(leyers["雨雲"]); // マップにレイヤを追加
+          })
+          .catch(error => console.error('RainViewer API の取得に失敗しました:', error));
+          
+
       //切り替えBoxを作成( {collapsed:false}で表示しっぱなし)＆マーカーが入るように地図範囲設定
       L.control.layers(baseMaps, leyers, { collapsed: false }).addTo(map);
       map.fitBounds(bound);
