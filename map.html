@@ -5,13 +5,11 @@
   <base target="_top">
 </head>
 
-<body>
+<body onload="refreshMap()">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
     integrity="sha256-kLaT2GOSpHechhsozzB+flnD+zUyjE2LlfWPgU04xyI=" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"
     integrity="sha256-WBkoXOwTeyKclOHuWtc+i2uENFpDZ9YPdf5Hf+D7ewM=" crossorigin=""></script>
-  <!-- <script src="https://code.jquery.com/jquery-3.6.3.min.js"
-    integrity="sha256-pvPw+upLPUjgMXY0G+8O0xUf+/Im1MZjXxxgOcBQBXU=" crossorigin="anonymous"></script> -->
 
   <!-- https://moewe-net.com/js/leaflet マーカークラスターのためのscript -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"
@@ -66,8 +64,9 @@
   </style>
 
   <script>
-    window.onload = init;
-    
+    window.onload = function () {
+      refreshMap();
+    };
     //https://qiita.com/access3151fq/items/ffdd74fdb3468d29e553
     //アイコンの色を変える
     function genIconObject(colorClassName) {
@@ -80,41 +79,43 @@
         className: colorClassName, // <= ここでcssで作ったクラス名を指定
       });
     }
-    const redIcon = genIconObject("icon-red");
-    const blueIcon = genIconObject("icon-blue");
-    const yellowIcon = genIconObject("icon-yellow");
-    const greenIcon = genIconObject("icon-green");
-    const orangeIcon = genIconObject("icon-orange");
-    const grayIcon = genIconObject("icon-gray");
+    const mapIcons = {
+      "redIcon":    genIconObject("icon-red"),
+      "blueIcon":   genIconObject("icon-blue"),
+      "yellowIcon": genIconObject("icon-yellow"),
+      "greenIcon":  genIconObject("icon-green"),
+      "orangeIcon": genIconObject("icon-orange"),
+      "grayIcon":   genIconObject("icon-gray")
+    };
 
-    //マーカーに表示したい対象の緯度経度とポップアップする名称を設定
-    let markerList = [
-      { pos: [34.711141226058295, 135.8147849221825], name: "A", icon: redIcon, layer: "L1" },
-      { pos: [35.711141226058295, 139.8147849221825], name: "B", icon: blueIcon, layer: "L1" },
-      { pos: [36.711141226058295, 135.8147849221825], name: "C", icon: yellowIcon, layer: "L2" },
-      { pos: [33.711141226058295, 135.8147849221825], name: "D", icon: greenIcon, layer: "L2" },
-      { pos: [32.711141226058295, 135.8147849221825], name: "E", icon: orangeIcon, layer: "L3" },
-      { pos: [31.711141226058295, 135.8147849221825], name: "F", icon: grayIcon, layer: "L4" },
-      // "<?!= builList ?>"
-    ];
+    let map;
+    let markerList;
 
+    // //マーカーに表示したい対象の緯度経度とポップアップする名称を設定
+    // let markerList = [
+    //   // { pos: [34.6686457384369, 135.49130770470023], name: "桜川", icon: grayIcon, layer: "関西" },
+    //   // { pos: [35.652103840876286, 139.7980625095375], name: "豊洲", icon: grayIcon, layer: "関東" },
+    //   // { pos: [34.711141226058295, 135.6147849221825], name: "大東", icon: grayIcon, layer: "関西" }, 
+    // ];
+
+    // // 20260209 JQueryを使わない関数に変更(ライブラリ読込をコメントアウト)
     //JSONを取ってきてparseしたものを返す関数
     function getParsedJSON(jsonURL) {
-    try {
-      var xhr = new XMLHttpRequest();
-      xhr.open('GET', jsonURL, false); // 同期リクエスト（false）
-      xhr.send(null);
-      if (xhr.status >= 200 && xhr.status < 300) {
-        return JSON.parse(xhr.responseText);
-      } else {
-        console.error('getParsedJSON HTTP error:', xhr.status);
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', jsonURL, false); // 同期リクエスト（false）
+        xhr.send(null);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          return JSON.parse(xhr.responseText);
+        } else {
+          console.error('getParsedJSON HTTP error:', xhr.status);
+          return null;
+        }
+      } catch (e) {
+        console.error('getParsedJSON error:', e);
         return null;
       }
-    } catch (e) {
-      console.error('getParsedJSON error:', e);
-      return null;
     }
-  }
 
     //時刻を読める形式に変換 引数timeはミリ秒単位
     function getReadableTime(time) {
@@ -127,20 +128,21 @@
       return y + "/" + m + "/" + d + " " + h + ":" + min;
     }
 
+    // // 20260209 rainrader 側の仕様変更に対応 
     // 気象レーダーをプロットしたレイヤを返す
     function getWeatherLayer() {
       // レイヤーを作成
       let weatherJSON = getParsedJSON('https://api.rainviewer.com/public/weather-maps.json');
       let host = weatherJSON.host; //画像サーバーのホスト
       let latestPath = weatherJSON.radar.past[weatherJSON.radar.past.length - 1].path; //最新のデータパス
-      let tileSIze = 256; //画像サイズ (256 または 512)
+      let tileSIze = 512; //画像サイズ (256 または 512)
       let colorScheme = 1; //カラースキームID [5]
       let smooth = 1; //平滑化処理 (1: ON, 0: OFF)
       let snow = 1; //雪の表示 (1: ON, 0: OFF)
       let radarUrl = `${host}${latestPath}/${tileSIze}/{z}/{x}/{y}/${colorScheme}/${smooth}_${snow}.png`; //タイルURLの組み立て
       let raderLayer = L.tileLayer(radarUrl, {
         attribution: '<a href="https://www.rainviewer.com/api.html">RainViewer</a>', //出典明記が必要
-        opacity: 0.6, //背景地図が見えるよう透明度を調整
+        opacity: 0.7, //背景地図が見えるよう透明度を調整
         zIndex: 100
       });
 
@@ -151,7 +153,7 @@
       return [raderLayer, timeStr];
     }
 
-    // 地震の情報をプロットしたレイヤを返す
+    //地震の情報をプロットしたレイヤを返す
     function getEQLayer() {
       const regexp = /([+-][\d\.]+)([+-][\d\.]+)[+-]{0,1}([\d\.]+){0,1}\//; //緯度経度・震源の深さを解析する正規表現。震源の深さは含まれない場合もある
       const jmaURL = "https://www.data.jma.go.jp/multi/quake/quake_detail.html?eventID=<EID>&lang=jp";
@@ -201,7 +203,7 @@
     }
 
     function init() {
-      let map = L.map('mapcontainer');
+      map = L.map('mapcontainer');
 
       //何種類かの地図のtileLayerをbaseMapsオブジェクトに格納し、ブラウザで選べるようにする
       let baseMaps = {};
@@ -237,12 +239,12 @@
       legend.onAdd = function () {
         var div = L.DomUtil.create('div', 'info legend');
         var labels = [];
-        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#0000ff"></span>コンクリート</span>');
-        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ffff00"></span>プレハブ</span>');
-        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ff0000"></span>可搬</span>');
-        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#7d7d7d"></span>ビル形態不明</span>');
-        // labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ee7800"></span>凡例2</span>');
-        // labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#00ff00"></span>凡例4</span>');
+        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#0000ff"></span>入局前</span>');
+        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ff0000"></span>入局中</span>');
+        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#7d7d7d"></span>退局済み</span>');
+        labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ffff00"></span>入退局情報なし</span>');
+        // labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#ee7800"></span>凡例:橙</span>');
+        // labels.push('<span class="legend-item"><span class="legend-item-color" style="background:#00ff00"></span>凡例:緑</span>');
         div.innerHTML = labels.join('');
         return div;
       };
@@ -260,22 +262,20 @@
           layers[mk.layer] = L.markerClusterGroup({
             maxClusterRadius: 0,
           });  //クラスタ化の半径(初期値80)、大きくすると離れたマーカーも1つにまとめます
-          // if (Object.keys(layers).length == 1)
-          //     map.addLayer(layers[mk.layer]);    //最初に作成したレイヤだけ地図に表示
-          map.addLayer(layers[mk.layer]);    //全レイヤを地図に表示
+          if (Object.keys(layers).length == 1) //最初に作成したレイヤだけ地図に表示
+            map.addLayer(layers[mk.layer]);    
+          //map.addLayer(layers[mk.layer]);    //全レイヤを地図に表示
         }
         layers[mk.layer].addLayer(  //レイヤにマーカーを追加
-          // L.marker(mk.pos, { icon: mk.icon }).bindTooltip(mk.name));
-          // L.marker(mk.pos, { icon: mk.icon }).bindPopup(L.popup().setContent("<a href='https://www.google.com' target='blank'>GoogleMap</a>")).bindTooltip(mk.name, {permanent:true}));
-          L.marker(mk.pos, { icon: mk.icon }).bindTooltip(mk.name, { permanent: true }).on('click', function () { clickEvt(mk.name); })); //常に表示、マーカークリックで詳細情報へ
+          L.marker(mk.pos, { icon: mapIcons[mk.icon] }).bindTooltip(mk.name, { permanent: false }).on('click', function () { clickEvt(mk.record); })); //マウスオ時のみ表示、マーカークリックで詳細情報へ
         bound.extend(mk.pos);   //boundにマーカーを追加(mk.posが入るように範囲を広げる) 
       }
 
-      //雨雲・地震レイヤを連想配列layersに追加＆地図に表示
+      // //雨雲・地震レイヤを連想配列layersに追加＆地図に表示
       let weatherLayerTime = getWeatherLayer(); //レイヤと時刻のセットを取得
       let weatherLayerName = "雨雲(" + weatherLayerTime[1] + ")"; //レイヤ名に時刻をつける
-      layers[weatherLayerName] = weatherLayerTime[0];
-      map.addLayer(layers[weatherLayerName]); //マップにレイヤを追加
+      layers[weatherLayerName] = weatherLayerTime[0]; // レイヤをマップに追加
+      map.addLayer(layers[weatherLayerName]); // レイヤを選択状態にする
       layers["地震(震源・過去24h)"] = getEQLayer();
       map.addLayer(layers["地震(震源・過去24h)"]);
 
@@ -288,12 +288,43 @@
         //window.open('https://maps.google.com/maps?ll=35,135');
         let link = "<?!= builLink ?>";
         link = link.replace(/<BUIL>/g, builName);
-        window.open(link);
+        window.open(link, '_blank', 'height=600');
       }
     }
 
+    function refreshMap(){
+      console.log('マップをクリアして再読み込みします...: ' + new Date().toLocaleTimeString());
+
+      // ローカルでのテスト用
+      markerList = [
+        { pos: [34.6686457384369, 135.49130770470023], name: "桜川", icon: "grayIcon", layer: "関西" },
+        { pos: [35.652103840876286, 139.7980625095375], name: "豊洲", icon: "redIcon", layer: "関東" },
+        { pos: [34.711141226058295, 135.6147849221825], name: "大東", icon: "greenIcon", layer: "関西" },
+      ];
+      if (map !== undefined && map !== null) {
+        map.remove(); // 地図とそれに紐づくイベントをすべて削除
+        map = null;
+      }
+      init();
+      setTimeout(refreshMap, 60*1000);
+
+      // GASで動かす時用
+      //変数 markerList を更新させる
+      // google.script.run.withSuccessHandler(function(data){
+      //   markerList = data;
+
+      //   // console.log(markerList)
+      //   if (map !== undefined && map !== null) {
+      //     map.remove(); // 地図とそれに紐づくイベントをすべて削除
+      //     map = null;
+      //   }        
+      //   init();
+        
+      //   setTimeout(refreshMap, 270*1000);
+      // }).getMarkerList();
+    }
   </script>
   <div id="mapcontainer" style="position:absolute;top:0;left:0;right:0;bottom:0;"></div>
-
 </body>
+
 </html>
