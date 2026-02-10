@@ -5,7 +5,7 @@
   <base target="_top">
 </head>
 
-<body onload="refreshMap()">
+<body>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
     integrity="sha256-kLaT2GOSpHechhsozzB+flnD+zUyjE2LlfWPgU04xyI=" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"
@@ -100,21 +100,32 @@
 
     // // 20260209 JQueryを使わない関数に変更(ライブラリ読込をコメントアウト)
     //JSONを取ってきてparseしたものを返す関数
-    function getParsedJSON(jsonURL) {
-      try {
-        var xhr = new XMLHttpRequest();
-        xhr.open('GET', jsonURL, false); // 同期リクエスト（false）
-        xhr.send(null);
-        if (xhr.status >= 200 && xhr.status < 300) {
-          return JSON.parse(xhr.responseText);
-        } else {
-          console.error('getParsedJSON HTTP error:', xhr.status);
+    async function getParsedJSON(jsonURL) {
+      try{
+        const response = await fetch(jsonURL);
+        if (!response.ok) {
+          console.error('getParsedJSON HTTP error:', response.status);
           return null;
         }
+        return await response.json();
       } catch (e) {
         console.error('getParsedJSON error:', e);
         return null;
       }
+      // try {
+      //   var xhr = new XMLHttpRequest();
+      //   xhr.open('GET', jsonURL, false); // 同期リクエスト（false）
+      //   xhr.send(null);
+      //   if (xhr.status >= 200 && xhr.status < 300) {
+      //     return JSON.parse(xhr.responseText);
+      //   } else {
+      //     console.error('getParsedJSON HTTP error:', xhr.status);
+      //     return null;
+      //   }
+      // } catch (e) {
+      //   console.error('getParsedJSON error:', e);
+      //   return null;
+      // }
     }
 
     //時刻を読める形式に変換 引数timeはミリ秒単位
@@ -130,9 +141,11 @@
 
     // // 20260209 rainrader 側の仕様変更に対応 
     // 気象レーダーをプロットしたレイヤを返す
-    function getWeatherLayer() {
+    async function getWeatherLayer() {
       // レイヤーを作成
-      let weatherJSON = getParsedJSON('https://api.rainviewer.com/public/weather-maps.json');
+      let weatherJSON = await getParsedJSON('https://api.rainviewer.com/public/weather-maps.json');
+      if (!weatherJSON) return null; // JSONの取得に失敗した場合はnullを返す
+
       let host = weatherJSON.host; //画像サーバーのホスト
       let latestPath = weatherJSON.radar.past[weatherJSON.radar.past.length - 1].path; //最新のデータパス
       let tileSIze = 512; //画像サイズ (256 または 512)
@@ -159,12 +172,13 @@
     }
 
     //地震の情報をプロットしたレイヤを返す
-    function getEQLayer() {
+    async function getEQLayer() {
       const regexp = /([+-][\d\.]+)([+-][\d\.]+)[+-]{0,1}([\d\.]+){0,1}\//; //緯度経度・震源の深さを解析する正規表現。震源の深さは含まれない場合もある
       const jmaURL = "https://www.data.jma.go.jp/multi/quake/quake_detail.html?eventID=<EID>&lang=jp";
 
       //気象庁から地震情報をGET・レイヤ作成
-      let json = getParsedJSON('https://www.jma.go.jp/bosai/quake/data/list.json');
+      let json = await getParsedJSON('https://www.jma.go.jp/bosai/quake/data/list.json');
+      if(!json) return null; // JSONの取得に失敗した場合はnullを返す
       let eqlayer = L.layerGroup();
 
       //forで指定時間時間(24時間以内)の震源・震度情報を取り出す
@@ -207,7 +221,13 @@
       return eqlayer;
     }
 
-    function init() {
+    async function init() {
+      //気象レーダーと地震のレイヤを並行して取得
+      // 並列処理できるところは先に実行する
+      const promiseWeatherRader = getWeatherLayer();
+      const promiseEQLayer = getEQLayer();
+      // const [weatherData, eqlayer] = await Promise.all([getWeatherLayer(), getEQLayer()]); 
+
       map = L.map('mapcontainer');
 
       //何種類かの地図のtileLayerをbaseMapsオブジェクトに格納し、ブラウザで選べるようにする
@@ -276,13 +296,27 @@
         bound.extend(mk.pos);   //boundにマーカーを追加(mk.posが入るように範囲を広げる) 
       }
 
-      // //雨雲・地震レイヤを連想配列layersに追加＆地図に表示
-      let weatherLayerTime = getWeatherLayer(); //レイヤと時刻のセットを取得
-      let weatherLayerName = "雨雲(" + weatherLayerTime[1] + ")"; //レイヤ名に時刻をつける
-      layers[weatherLayerName] = weatherLayerTime[0]; // レイヤをマップに追加
-      map.addLayer(layers[weatherLayerName]); // レイヤを選択状態にする
-      layers["地震(震源・過去24h)"] = getEQLayer();
-      map.addLayer(layers["地震(震源・過去24h)"]);
+      const weatherData = await promiseWeatherRader;
+      if (weatherData){
+        let [weatherLayer, timestr] = weatherData;
+        let weatherLayerName = "雨雲(" + timestr + ")"; //レイヤ名に時刻をつける
+        layers[weatherLayerName] = weatherLayer; // レイヤをマップに追加
+        map.addLayer(layers[weatherLayerName]); // レイヤを選択状態にする
+      } 
+
+      const eqlayer = await promiseEQLayer;
+      if (eqlayer) {
+        layers["地震(震源・過去24h)"] = eqlayer;
+        map.addLayer(eqlayer);
+      }
+
+      // // //雨雲・地震レイヤを連想配列layersに追加＆地図に表示
+      // let weatherLayerTime = getWeatherLayer(); //レイヤと時刻のセットを取得
+      // let weatherLayerName = "雨雲(" + weatherLayerTime[1] + ")"; //レイヤ名に時刻をつける
+      // layers[weatherLayerName] = weatherLayerTime[0]; // レイヤをマップに追加
+      // map.addLayer(layers[weatherLayerName]); // レイヤを選択状態にする
+      // layers["地震(震源・過去24h)"] = getEQLayer();
+      // map.addLayer(layers["地震(震源・過去24h)"]);
 
       //切り替えBoxを作成( {collapsed:false}で表示しっぱなし)＆マーカーが入るように地図範囲設定
       L.control.layers(baseMaps, layers, { collapsed: false }).addTo(map);
@@ -297,7 +331,7 @@
       }
     }
 
-    function refreshMap(){
+    async function refreshMap(){
       console.log('マップをクリアして再読み込みします...: ' + new Date().toLocaleTimeString());
 
       // ローカルでのテスト用
@@ -310,7 +344,7 @@
         map.remove(); // 地図とそれに紐づくイベントをすべて削除
         map = null;
       }
-      init();
+      await init();
       setTimeout(refreshMap, 60*1000);
 
       // GASで動かす時用
