@@ -89,8 +89,8 @@
       "grayIcon":   genIconObject("icon-gray")
     };
 
-    // // 20260209 JQueryを使わない関数に変更(ライブラリ読込をコメントアウト)
-    //JSONを取ってきてparseしたものを返す関数
+
+    // 外部からJSONを取得・parseしてオブジェクトを返す
     async function getParsedJSON(jsonURL) {
       try{
         const response = await fetch(jsonURL);
@@ -105,7 +105,8 @@
       }
     }
 
-    //時刻を読める形式に変換 引数timeはミリ秒単位
+
+    //ミリ秒UnixTimeを読める形式に変換
     function getReadableTime(time) {
       const dt = new Date(time);
       const y = dt.getFullYear();
@@ -116,35 +117,104 @@
       return `${y}/${m}/${d} ${h}:${min}`;
     }
 
-    // // 20260209 rainrader 側の仕様変更に対応 
-    // 気象レーダーをプロットしたレイヤを返す
-    async function getWeatherLayer() {
-      // レイヤーを作成
-      const weatherJSON = await getParsedJSON('https://api.rainviewer.com/public/weather-maps.json');
-      if (!weatherJSON) return null; // JSONの取得に失敗した場合はnullを返す
 
-      const host = weatherJSON.host; //画像サーバーのホスト
-      const latestPath = weatherJSON.radar.past[weatherJSON.radar.past.length - 1].path; //最新のデータパス
-      const tileSIze = 512; //画像サイズ (256 または 512)
-      const colorScheme = 1; //カラースキームID [5]
-      const smooth = 1; //平滑化処理 (1: ON, 0: OFF)
-      const snow = 1; //雪の表示 (1: ON, 0: OFF)
-      const radarUrl = `${host}${latestPath}/${tileSIze}/{z}/{x}/{y}/${colorScheme}/${smooth}_${snow}.png`; //タイルURLの組み立て
-      const raderLayer = L.tileLayer(radarUrl, {
-        attribution: '<a href="https://www.rainviewer.com/api.html">RainViewer</a>', //出典明記が必要
+    // 気象庁JSON記載のUTC時刻文字列を日本時間の形式に変換する関数
+    // 20260216140500 -> 2026/2/16 23:05 のような形式に変換して返す
+    function formatJmaTime(utcStr) {
+      // 1. 文字列を各パーツに分解 (2026, 02, 16, 13, 10, 00)
+      const y = utcStr.substring(0, 4);
+      const m = utcStr.substring(4, 6);
+      const d = utcStr.substring(6, 8);
+      const h = utcStr.substring(8, 10);
+      const min = utcStr.substring(10, 12);
+      const s = utcStr.substring(12, 14);
+
+      // 2. ISO形式の文字列を作成して Date オブジェクトにする (末尾にZをつけてUTCとして解釈)
+      const utcDate = new Date(`${y}-${m}-${d}T${h}:${min}:${s}Z`);
+
+      // 3. 日本時間に変換してフォーマット
+      // Intl.DateTimeFormat を使うと、OSの地域設定に合わせて簡単に変換できます
+      const jstDate = new Intl.DateTimeFormat('ja-JP', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: false,
+          timeZone: 'Asia/Tokyo'
+      }).format(utcDate);
+
+      return jstDate; // 結果: 2026/2/16 22:10
+    }
+
+
+    // 気象庁タイルはズームレベル偶数のときは256pxタイル、奇数のときは512pxタイルを返す仕様になっているため、LeafletのTileLayerを拡張して対応するクラスを作成
+    const JmaRadarLayer = L.TileLayer.extend({
+      // URLのズームレベル決定ロジック
+      _getZoomForUrl: function () {
+        let zoom = this._tileZoom;
+        if (zoom % 2 !== 0 && zoom > 4) {
+          return zoom - 1;
+        }
+        return zoom;
+      },
+      // ★ここが重要！表示上のタイルサイズを計算する
+      getTileSize: function () {
+        const s = L.TileLayer.prototype.getTileSize.call(this); // 通常は256
+        const zoom = this._tileZoom;
+        if (zoom % 2 !== 0 && zoom > 4) {
+          // 奇数ズームの時は、256pxの画像を512pxの枠に引き伸ばして表示させる
+          return s.divideBy(0.5); 
+        }
+        return s;
+      }
+    });
+
+
+    // 気象庁のレーダーをプロットしたレイヤを返す
+    // 引数 forecast_min は、何分後の予報を表示するかを指定（例：0なら実況、30なら30分後の予報）
+    async function getWeatherLayer_JMA(forecast_min = 0){
+      // 過去のレーダー画像についてのJSONと予報についてのJSONはURLが異なるため、forecast_minの値によってURLを切り替える
+      let weatherJSON = null;
+      if (forecast_min === 0) {
+        weatherJSON = await getParsedJSON('https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json');  // 実況
+      } else {
+        weatherJSON = await getParsedJSON('https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json');  // 予報
+      }
+      // JSONの取得に失敗した場合はnullを返す
+      if (!weatherJSON) return null; 
+
+      // 目的の時刻を取得
+      let element_json;
+      if (forecast_min === 0){
+        // 過去のレーダー画像 targetTimes_N1.json の場合。最新の時刻は配列の最初
+        element_json = weatherJSON[0];
+      }else{
+        // forecast_min を、5飛ばしの最大11のインデックスに置き換える
+        let index_json = Math.floor(forecast_min / 5);
+        if(index_json > 11) index_json = 11;
+        if(index_json < 0) index_json = 0;
+
+        // 予報の targetTimes_N2.json の場合、先頭の要素が最も未来の時刻の予報になるので、配列を逆順にしてからインデックスでアクセスする
+        const reversedJSON = [...weatherJSON].reverse(); 
+
+        element_json = reversedJSON[index_json];
+      }
+
+      const radarURL = `https://www.jma.go.jp/bosai/jmatile/data/nowc/${element_json.basetime}/none/${element_json.validtime}/surf/hrpns/{z}/{x}/{y}.png`;
+      const raderLayer = new JmaRadarLayer(radarURL, {
+        attribution: '<a href="https://www.jma.go.jp/jmatile/terms.html">気象庁</a>',
         opacity: 0.7, //背景地図が見えるよう透明度を調整
         zIndex: 100,
         updateWhenIdle: true,
         updateWhenZooming: false,
         keepBuffer: 4,
-        maxZoom: 7,
-        bounds: [[20, 122], [50, 153]],
+        maxNativeZoom: 10,
+        minZoom: 4, 
       });
-
+      
       // 文字列化した時刻を作成
-      const timeStr = getReadableTime(weatherJSON.radar.past[weatherJSON.radar.past.length - 1].time * 1000); 
-
-      // レイヤーと時刻を返す
+      const timeStr = formatJmaTime(element_json.validtime);
       return [raderLayer, timeStr];
     }
 
@@ -204,9 +274,10 @@
 
       //気象レーダーと地震のレイヤを並行して取得
       // データのダウンロードは先に非同期で実施
-      const promiseMarkerlist = getParsedJSON("https://script.google.com/macros/s/AKfycbwV1ESN82c9aYcThxu3E0UMEv3I_3sSedDKHKeH59VBdvVyqTE2I4riwlyAv4BkSTw/exec?markerlist=");
-      const promiseWeatherRader = getWeatherLayer();
+      // const promiseMarkerlist = getParsedJSON("https://script.google.com/macros/s/AKfycbwV1ESN82c9aYcThxu3E0UMEv3I_3sSedDKHKeH59VBdvVyqTE2I4riwlyAv4BkSTw/exec?markerlist=");
       const promiseEQLayer = getEQLayer();
+      const promiseWeatherJMA = getWeatherLayer_JMA(0);
+      const promiseWeatherJMA_forcast = getWeatherLayer_JMA(60);
 
       //何種類かの地図のtileLayerをbaseMapsオブジェクトに格納し、ブラウザで選べるようにする
       const baseMaps = {};
@@ -247,14 +318,14 @@
         return div;
       };
 
-      // ビル情報のリストを取得
-      const markerList = await promiseMarkerlist;
+      // // ビル情報のリストを取得
+      // const markerList = await promiseMarkerlist;
       // //マーカーに表示したい対象の緯度経度とポップアップする名称を設定
-      // const markerList = [
-      //   // { pos: [34.6686457384369, 135.49130770470023], name: "桜川", icon: grayIcon, layer: "関西" },
-      //   // { pos: [35.652103840876286, 139.7980625095375], name: "豊洲", icon: grayIcon, layer: "関東" },
-      //   // { pos: [34.711141226058295, 135.6147849221825], name: "大東", icon: grayIcon, layer: "関西" }, 
-      // ];
+      const markerList = [
+        { pos: [34.6686457384369, 135.49130770470023], name: "桜川", icon: "grayIcon", layer: "関西" },
+        { pos: [35.652103840876286, 139.7980625095375], name: "豊洲", icon: "blueIcon", layer: "関東" },
+        { pos: [34.711141226058295, 135.6147849221825], name: "大東", icon: "yellowIcon", layer: "関西" }, 
+      ];
 
       // markerList取得前に地図を更新すると何も表示されない時間ができるので、ここで現地図の削除、新地図の描画
       if (oldMap) {
@@ -285,14 +356,23 @@
         bound.extend(mk.pos);   //boundにマーカーを追加(mk.posが入るように範囲を広げる) 
       }
 
-      // 雨雲レイヤを連想配列layersに追加＆地図に表示
-      const weatherData = await promiseWeatherRader;
-      if (weatherData){
-        const [weatherLayer, timestr] = weatherData;
-        const weatherLayerName = `雨雲(${timestr})`; //レイヤ名に時刻をつける
-        layers[weatherLayerName] = weatherLayer; // レイヤをマップに追加
-        // map.addLayer(layers[weatherLayerName]); // レイヤを選択状態にする
-      } 
+      // 気象庁の雨雲レーダー画像を連想配列layersに追加＆地図に表示
+      const weatherJMAData = await promiseWeatherJMA;
+      if (weatherJMAData){
+        const [weatherJMA, timestr] = weatherJMAData;
+        const weatherJMALayerName = `雨雲(${timestr} 実況)`; //レイヤ名に時刻をつける
+        layers[weatherJMALayerName] = weatherJMA; // レイヤをマップに追加
+        map.addLayer(layers[weatherJMALayerName]); // レイヤを選択状態にする
+      }
+
+      // 気象庁の雨雲レーダー画像(予報)を連想配列layersに追加＆地図に表示
+      const weatherJMAData_forcast = await promiseWeatherJMA_forcast;
+      if (weatherJMAData_forcast){
+        const [weatherJMA_forcast, timestr] = weatherJMAData_forcast;
+        const weatherJMA_forcast_LayerName = `雨雲(${timestr} 予報)`; //レイヤ名に時刻をつける
+        layers[weatherJMA_forcast_LayerName] = weatherJMA_forcast; // レイヤをマップに追加
+        // map.addLayer(layers[weatherJMA_forcast_LayerName]); // レイヤを選択状態にする
+      }
 
       // 地震レイヤを連想配列layersに追加＆地図に表示
       const eqlayer = await promiseEQLayer;
