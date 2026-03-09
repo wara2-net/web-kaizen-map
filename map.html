@@ -271,13 +271,20 @@
     }
 
     async function init(oldMap){
-
       //気象レーダーと地震のレイヤを並行して取得
       // データのダウンロードは先に非同期で実施
       // const promiseMarkerlist = getParsedJSON("https://script.google.com/macros/s/AKfycbwV1ESN82c9aYcThxu3E0UMEv3I_3sSedDKHKeH59VBdvVyqTE2I4riwlyAv4BkSTw/exec?markerlist=");
       const promiseEQLayer = getEQLayer();
       const promiseWeatherJMA = getWeatherLayer_JMA(0);
       const promiseWeatherJMA_forcast = getWeatherLayer_JMA(60);
+
+      // URL GET のクエリストリングから、地図の初期位置を取得する
+      // パラメータ例：?lat=34.6937&lng=135.5022&z=8
+      const querystring = window.location.search;
+      const urlParams = new URLSearchParams(querystring);
+      const default_zoom = urlParams.get('z') || null;
+      const default_lat = urlParams.get('lat') || null;
+      const default_lng = urlParams.get('lng') || null;
 
       //何種類かの地図のtileLayerをbaseMapsオブジェクトに格納し、ブラウザで選べるようにする
       const baseMaps = {};
@@ -331,7 +338,16 @@
       if (oldMap) {
         oldMap.remove(); // 地図とそれに紐づくイベントをすべて削除
       }
-      const map = L.map('mapcontainer');
+
+      // クエリストリングで初期の緯度経度・ズームの有無でマップの初期位置を決める
+      // const map = L.map('mapcontainer');
+      let map;
+      if(default_lat && default_lng && default_zoom){
+        map = L.map('mapcontainer').setView([default_lat, default_lng], default_zoom);
+      }else{
+        map = L.map('mapcontainer');
+      }
+            
       baseMaps["GoogleMap"].addTo(map);   //デフォルトで表示する地図設定
       L.control.scale({ maxWidth: 250, imperial: false }).addTo(map);   //縮尺追加
       legend.addTo(map);    //凡例追加
@@ -381,9 +397,13 @@
         map.addLayer(eqlayer);
       }
 
-      //切り替えBoxを作成( {collapsed:false}で表示しっぱなし)＆マーカーが入るように地図範囲設定
+      //切り替えBoxを作成( {collapsed:false}で表示しっぱなし)
       L.control.layers(baseMaps, layers, { collapsed: false }).addTo(map);
-      map.fitBounds(bound);
+
+      // クエリストリングで緯度経度・ズームがない場合、マーカーが入るように地図範囲設定
+      if(!(default_lat && default_lng && default_zoom)){
+        map.fitBounds(bound);
+      }
 
       //マーカークリック時イベント
       function clickEvt(builName) {
