@@ -275,19 +275,19 @@
     async function getBearLayer() {
       const ICON_URL = "http://192.168.1.15/nttmap/bear.png";
       const BEAR_NEWS = [
-        {lat:35.157298083060645, lng:135.44370203120653, title:"クマ出没 京都の山奥", url:"https://news.jp/i/1415368726429893161"},
-        {lat:35.27883191407024, lng:136.316432549086, title:"クマ出没 滋賀の山奥", url:"https://news.jp/i/1415352620839388154"},
+        {pos:[35.157298083060645, 135.44370203120653], title:"クマ出没 京都の山奥", url:"https://news.jp/i/1415368726429893161"},
+        {pos:[35.27883191407024, 136.316432549086], title:"クマ出没 滋賀の山奥", url:"https://news.jp/i/1415352620839388154"},
       ];
       const bearIcon = L.icon({
         iconUrl: ICON_URL,
         iconSize: [32, 32],      // アイコンのサイズ [幅, 高さ]
-        iconAnchor: [16, 16],    // アイコンのどの位置を緯度経度に合わせるか (この場合は下端中央)
+        iconAnchor: [16, 16],    // アイコンのどの位置を緯度経度に合わせるか
         popupAnchor: [0, -32]    // ポップアップが出る位置のオフセット
       });
       const bearLayer = L.layerGroup();
       
       for(const data of BEAR_NEWS){
-        const marker = L.marker([data.lat, data.lng], {icon: bearIcon});
+        const marker = L.marker(data.pos, {icon: bearIcon});
         marker.bindTooltip(data.title);
         marker.on("click", () => {
           if (data.url) window.open(data.url);
