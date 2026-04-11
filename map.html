@@ -270,10 +270,39 @@
       return eqlayer;
     }
 
+
+    // 熊情報をプロットしたレイヤを返す
+    async function getBearLayer() {
+      const ICON_URL = "http://192.168.1.15/nttmap/bear.png";
+      const BEAR_NEWS = [
+        {lat:35.157298083060645, lng:135.44370203120653, title:"クマ出没 京都の山奥", url:"https://news.jp/i/1415368726429893161"},
+        {lat:35.27883191407024, lng:136.316432549086, title:"クマ出没 滋賀の山奥", url:"https://news.jp/i/1415352620839388154"},
+      ];
+      const bearIcon = L.icon({
+        iconUrl: ICON_URL,
+        iconSize: [32, 32],      // アイコンのサイズ [幅, 高さ]
+        iconAnchor: [16, 16],    // アイコンのどの位置を緯度経度に合わせるか (この場合は下端中央)
+        popupAnchor: [0, -32]    // ポップアップが出る位置のオフセット
+      });
+      const bearLayer = L.layerGroup();
+      
+      for(const data of BEAR_NEWS){
+        const marker = L.marker([data.lat, data.lng], {icon: bearIcon});
+        marker.bindTooltip(data.title);
+        marker.on("click", () => {
+          if (data.url) window.open(data.url);
+        });
+        marker.addTo(bearLayer);
+      }
+      return bearLayer;
+    }
+
+
     async function init(oldMap){
       //気象レーダーと地震のレイヤを並行して取得
       // データのダウンロードは先に非同期で実施
       // const promiseMarkerlist = getParsedJSON("https://script.google.com/macros/s/AKfycbwV1ESN82c9aYcThxu3E0UMEv3I_3sSedDKHKeH59VBdvVyqTE2I4riwlyAv4BkSTw/exec?markerlist=");
+      const promiseBearLayer = getBearLayer();
       const promiseEQLayer = getEQLayer();
       const promiseWeatherJMA = getWeatherLayer_JMA(0);
       const promiseWeatherJMA_forcast = getWeatherLayer_JMA(60);
@@ -395,6 +424,13 @@
       if (eqlayer) {
         layers["地震(震源・過去24h)"] = eqlayer;
         map.addLayer(eqlayer);
+      }
+
+      // 熊レイヤを連想配列に追加＆地図に表示
+      const bearlayer = await promiseBearLayer;
+      if(bearlayer){
+        layers["クマ出没地点"] = bearlayer;
+        map.addLayer(bearlayer);
       }
 
       //切り替えBoxを作成( {collapsed:false}で表示しっぱなし)
